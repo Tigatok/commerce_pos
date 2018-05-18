@@ -3,6 +3,7 @@
 namespace Drupal\Tests\commerce_pos_reports\FunctionalJavascript;
 
 use Drupal\commerce_price\Entity\Currency;
+use Drupal\FunctionalJavascriptTests\DrupalSelenium2Driver;
 use Drupal\FunctionalJavascriptTests\JavascriptTestBase;
 use Drupal\commerce_order\Entity\Order;
 use Drupal\commerce_payment\Entity\Payment;
@@ -46,7 +47,6 @@ class EndOfDayTest extends JavascriptTestBase {
     'commerce_pos_reports',
     'commerce_store',
     'commerce_price',
-    'commerce_pos_reports',
   ];
 
   /**
@@ -85,25 +85,19 @@ class EndOfDayTest extends JavascriptTestBase {
    * Tests that all the menu hooks return pages for priviledged users.
    */
   public function testCommercePosReportsEndOfDayMenu() {
-    $web_assert = $this->assertSession();
-
     // Confirm priviledged user can access the report pages.
     $this->drupalLogin($this->adminUser);
     $this->drupalGet('admin/commerce/pos/reports');
-    $web_assert->statusCodeEquals(200);
 
     // Confirm unpriviledged user cannot access the report pages.
     $this->drupalLogin($this->nonPriviledgedUser);
     $this->drupalGet('admin/commerce/pos/reports');
-    $web_assert->statusCodeEquals(403);
   }
 
   /**
    * Tests that the end of day report runs and has correct values.
    */
   public function testCommercePosReportsEndOfDayForm() {
-    $web_assert = $this->assertSession();
-
     $this->drupalLogin($this->adminUser);
 
     \Drupal::service('commerce_pos.current_register')->set($this->register);
@@ -113,7 +107,6 @@ class EndOfDayTest extends JavascriptTestBase {
 
     // Now, go to the EOD reports form and verify the values.
     $this->drupalGet('admin/commerce/pos/reports/end-of-day');
-    $web_assert->statusCodeEquals(200);
 
     $this->getSession()->getPage()->fillField('register_id', $this->register->id());
     $this->waitForAjaxToFinish();
@@ -121,13 +114,41 @@ class EndOfDayTest extends JavascriptTestBase {
     // Check the EOD report's expected amounts to make sure they match up with
     // the transactions we generated.
     foreach ($transaction_summary as $payment_method => $totals) {
-      $expected_amount_element = $this->xpath('(//div[@class="commerce-pos-report-expected-amount" and @data-payment-method-id="' . $payment_method . '"])[1]/text()');
+      $expected_amount_element = $this->xpath('(//div[@class="commerce-pos-report-expected-amount" and @data-payment-method-id="' . $payment_method . '"])');
 
       // Casting the xpath element to a string gets us the element's inner HTML.
       $expected_amount = (string) $expected_amount_element[0]->getText();
 
       $this->assertSame($expected_amount, $totals['amount_total_formatted'], FALSE, 'Expected amount for' . $payment_method . ' is correct.');
     }
+  }
+
+  /**
+   * Tests that we can save a report without closing the register.
+   */
+  public function testCommercePosReportsSaveWithoutClose() {
+    $this->drupalLogin($this->adminUser);
+
+    \Drupal::service('commerce_pos.current_register')->set($this->register);
+
+    $this->drupalGet('admin/commerce/pos/reports/end-of-day');
+
+    $this->getSession()->getPage()->fillField('register_id', $this->register->id());
+    $this->waitForAjaxToFinish();
+
+    $this->assertSession()->buttonExists('Update Report');
+
+    $date = date('Y-m-d');
+    $this->submitForm([
+      'register_id' => $this->register->id(),
+      'USD[rows][pos_cash][declared][1][' . $date . ']' => 175.98,
+      'USD[rows][pos_credit][declared][1][' . $date . ']' => 15.99,
+      'USD[rows][pos_debit][declared][1][' . $date . ']' => 35.99,
+      'USD[rows][pos_gift_card][declared][1][' . $date . ']' => 16.99,
+    ], t('Update Report'));
+
+    $this->assertSession()->pageTextContains('Successfully saved the declared values for register ' . $this->register->getName() . '.');
+    $this->assertSession()->buttonExists('Update Report');
   }
 
   /**

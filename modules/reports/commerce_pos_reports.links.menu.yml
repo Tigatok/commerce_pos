@@ -9,3 +9,9 @@ commerce_pos_reports.end-of-day:
   parent: 'commerce_pos_reports.base'
   description: 'POS End Of Day Report'
   route_name: 'commerce_pos_reports.end-of-day'
+
+commerce_pos_reports.previous-reports:
+  title: 'Previous Reports'
+  parent: 'commerce_pos_reports.base'
+  description: 'Point of Sale Reports - Previous Reports'
+  route_name: 'commerce_pos_reports.previous-reports'

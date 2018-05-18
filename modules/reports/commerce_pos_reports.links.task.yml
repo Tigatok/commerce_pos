@@ -3,3 +3,8 @@ commerce_pos_reports.end-of-day:
   route_name: 'commerce_pos_reports.end-of-day'
   base_route: 'commerce_pos_reports.base'
   description: 'Point of Sale Reports - End of Day'
+commerce_pos_reports.previous-reports:
+  title: 'Previous Reports'
+  route_name: 'commerce_pos_reports.previous-reports'
+  base_route: 'commerce_pos_reports.base'
+  description: 'Point of Sale Reports - Previous Reports'

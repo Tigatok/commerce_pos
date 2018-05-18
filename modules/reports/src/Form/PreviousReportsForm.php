@@ -3,37 +3,39 @@
 namespace Drupal\commerce_pos_reports\Form;
 
 use Drupal\commerce_pos\Entity\Register;
-use Drupal\Core\Ajax\AjaxResponse;
 use Drupal\commerce_pos_reports\Ajax\PrintEodReport;
+use Drupal\commerce_price\Entity\Currency;
+use Drupal\Core\Ajax\AjaxResponse;
 use Drupal\Core\Ajax\PrependCommand;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
-use Drupal\commerce_price\Entity\Currency;
-use Drupal\commerce_store\Entity\Store;
 use Drupal\Core\Url;
 
 /**
- * Class EndOfDayForm.
+ *
  */
-class EndOfDayForm extends FormBase {
+class PreviousReportsForm extends FormBase {
 
   /**
-   * {@inheritdoc}
+   * Returns a unique string identifying the form.
+   *
+   * @return string
+   *   The unique string identifying the form.
    */
   public function getFormId() {
-    return 'commerce_pos_end_of_day';
+    return 'commece_pos_reports_previous_reports';
   }
 
   /**
-   * Build the end of day report form.
+   * Form constructor.
    *
    * @param array $form
-   *   The form array.
+   *   An associative array containing the structure of the form.
    * @param \Drupal\Core\Form\FormStateInterface $form_state
-   *   The form state object.
+   *   The current state of the form.
    *
    * @return array
-   *   The form to build out.
+   *   The form structure.
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
     // Setup form.
@@ -60,8 +62,12 @@ class EndOfDayForm extends FormBase {
       $form_state->setValue('results_container_id', 'commerce-pos-report-results-container');
     }
 
-    $ajax = [
-      'callback' => '::endOfDayAjaxRefresh',
+    $form_ajax = [
+      'callback' => '::formAjaxRefresh',
+      'wrapper' => 'commerce-pos-report-eod-form-container',
+    ];
+    $results_ajax = [
+      'callback' => '::previousReportsAjaxRefresh',
       'wrapper' => $form_state->getValue('results_container_id'),
       'effect' => 'fade',
     ];
@@ -97,7 +103,8 @@ class EndOfDayForm extends FormBase {
       '#title' => $this->t('Transaction Date'),
       '#description' => $this->t('The day you wish to view or close a report from.'),
       '#default_value' => $date_filter,
-      '#ajax' => $ajax,
+    // '#ajax' => $results_ajax,.
+      '#ajax' => $form_ajax,
     ];
 
     // Register ID filter.
@@ -116,27 +123,30 @@ class EndOfDayForm extends FormBase {
       '#description' => $this->t('The register you wish to view or close a report on. Defaults to your current register if available.'),
       '#options' => $register_options,
       '#default_value' => $current_register ? $current_register->id() : NULL,
-      '#ajax' => $ajax,
+      '#ajax' => $results_ajax,
     ];
 
-    $form['results'] = [
-      '#type' => 'container',
-      '#id' => $form_state->getValue('results_container_id'),
-    ];
+    /** @var \Drupal\commerce_pos_reports\ReportGenerator $report_generator */
+    $report_generator = \Drupal::service('commerce_pos_reports.report_generator');
+    $report_versions = $report_generator->getReportVersions($date_filter, $register_id);
+    if (!empty($report_versions)) {
+      $form['filters']['version_timestamp'] = [
+        '#type' => 'select',
+        '#title' => $this->t('Versions'),
+        '#description' => $this->t('The version of the report you wish to view/edit.'),
+        '#options' => $report_versions,
+        '#ajax' => $results_ajax,
+      ];
+      $form['results'] = [
+        '#type' => 'container',
+        '#id' => $form_state->getValue('results_container_id'),
+      ];
 
-    if (!empty($register_id)) {
-      $register = Register::load($register_id);
-      $can_save = $register->isOpen();
+      if (!empty($register_id)) {
+        $register = Register::load($register_id);
+        $can_save = $register->isOpen();
 
-      // Get saved data for requested date.
-      /** @var \Drupal\commerce_pos_reports\ReportGenerator $report_generator */
-      $report_generator = \Drupal::service('commerce_pos_reports.report_generator');
-      $latest_report = $report_generator->getLatestReportForDay($date_filter, $register_id);
-      if ($register->isOpen()) {
-        if ($latest_report['state'] == 0) {
-          $report_history = $latest_report;
-        }
-
+        // Get saved data for requested date.
         $headers = [
           $this->t('Payment Type'),
           $this->t('Declared Amount'),
@@ -150,6 +160,21 @@ class EndOfDayForm extends FormBase {
         ];
 
         // Get the totals summary for the selected date and register.
+        if (!empty($form_state->getUserInput()) && $form_state->getUserInput()['version_timestamp'] != NULL) {
+          $version_timestamp_value = $form_state->getUserInput()['version_timestamp'];
+        }
+        else {
+          $version_timestamp_value = reset(array_keys($report_versions));
+        }
+        $report_history = $report_generator->getReportsByVersionTimestamp($version_timestamp_value, $register_id);
+//        $totals_array = [
+//          $register->getStore()->getDefaultCurrency()->getCurrencyCode() => [
+//            'pos_cash' => $report_history['data']['pos_cash']['declared'],
+//            'pos_credit' => $report_history['data']['pos_credit']['declared'],
+//            'pos_debit' => $report_history['data']['pos_debit']['declared'],
+//            'pos_gift_card' => $report_history['data']['pos_gift_card']['declared'],
+//          ],
+//        ];
         list($totals, $transaction_counts) = commerce_pos_reports_get_totals($date_filter, $register_id);
 
         $payment_gateway_options = commerce_pos_reports_get_payment_gateway_options();
@@ -158,7 +183,7 @@ class EndOfDayForm extends FormBase {
 
         // Display a textfield to enter the amounts for each currency type and
         // payment method.
-        foreach ($totals as $currency_code => $currency_totals) {
+        foreach ($totals_array as $currency_code => $currency_totals) {
           $form['results'][$currency_code] = [
             '#theme' => 'commerce_pos_reports_end_of_day_result_table',
             '#header' => $headers,
@@ -226,21 +251,22 @@ class EndOfDayForm extends FormBase {
 
             if (isset($report_history['data'][$payment_method_id]['declared'])) {
               $row['declared'][$register_id][$date_filter]['#default_value'] = $report_history['data'][$payment_method_id]['declared'];
+              $row['declared'][$register_id][$date_filter]['#value'] = $report_history['data'][$payment_method_id]['declared'];
             }
 
             // Expected amount.
             $row[] = [
               '#markup' => '<div class="commerce-pos-report-expected-amount" data-payment-method-id="' . $payment_method_id . '">'
-              . $number_formatter->formatCurrency($expected_amount, $currency)
-              . '</div>',
+                . $number_formatter->formatCurrency($expected_amount, $currency)
+                . '</div>',
             ];
 
             // Over/short.
             $over_short_amount = $report_history['data'][$payment_method_id]['declared'] - $expected_amount;
             $row[] = [
               '#markup' => '<div class="commerce-pos-report-balance" data-payment-method-id="' . $payment_method_id . '">'
-              . ($over_short_amount > -1 ? $number_formatter->formatCurrency($over_short_amount, $currency) : '<span class="commerce-pos-report-balance commerce-pos-report-negative">(' . $number_formatter->formatCurrency(abs($over_short_amount), $currency) . ')</span>')
-              . '</div>',
+                . ($over_short_amount > -1 ? $number_formatter->formatCurrency($over_short_amount, $currency) : '<span class="commerce-pos-report-balance commerce-pos-report-negative">(' . $number_formatter->formatCurrency(abs($over_short_amount), $currency) . ')</span>')
+                . '</div>',
             ];
 
             // Cash Deposit.
@@ -277,21 +303,14 @@ class EndOfDayForm extends FormBase {
           }
         }
 
-        if (!empty($totals)) {
-          $js_settings['commercePosReportCurrencies'] = commerce_pos_reports_currency_js(array_keys($totals));
+        if (!empty($totals_array)) {
+          $js_settings['commercePosReportCurrencies'] = commerce_pos_reports_currency_js(array_keys($totals_array));
           $form['results']['#attached']['drupalSettings'] = $js_settings;
         }
 
         $form['results']['actions'] = [
           '#type' => 'actions',
         ];
-
-        if ($can_save || $can_update) {
-          $form['results']['actions']['calculate'] = [
-            '#type' => 'submit',
-            '#value' => $this->t('Calculate'),
-          ];
-        }
 
         // Add this for user's who can't update if
         // they are still on the same date.
@@ -305,154 +324,37 @@ class EndOfDayForm extends FormBase {
         }
 
         // The save and print buttons.
-        if (!empty($totals)) {
-          if ($can_save) {
-            $form['results']['actions']['save'] = [
-              '#type' => 'submit',
-              '#value' => $this->t('Close Register & Save'),
-              '#validate' => ['::endOfDaySaveValidate'],
-              '#submit' => ['::endOfDaySaveSubmit'],
-            ];
-          }
-          else {
-            $form['results']['actions']['print'] = [
-              '#type' => 'submit',
-              '#value' => $this->t('Print'),
-              '#ajax' => [
-                'callback' => '::endOfDayPrintJs',
-                'wrapper' => 'commerce-pos-report-eod-form-container',
-              ],
-            ];
-          }
+        if (!empty($totals_array)) {
+          $form['results']['actions']['print'] = [
+            '#type' => 'submit',
+            '#value' => $this->t('Print'),
+            '#ajax' => [
+              'callback' => '::endOfDayPrintJs',
+              'wrapper' => 'commerce-pos-report-eod-form-container',
+            ],
+          ];
         }
       }
-      else {
-        $form['results']['error'] = [
-          '#markup' => $this->t('The register for this day is not currently open.<br />A register must be open for it to be closed and an EOD report generated. To view older reports, visit Previous Reports.'),
-        ];
-      }
+    }
+    else {
+      $form['results']['error'] = [
+        '#markup' => $this->t('There are no reports for this day.'),
+      ];
     }
 
     return $form;
   }
 
   /**
-   * Submit callback for the end of day report form.
+   * Form submission handler.
    *
    * @param array $form
-   *   The form array.
+   *   An associative array containing the structure of the form.
    * @param \Drupal\Core\Form\FormStateInterface $form_state
-   *   The form state object.
+   *   The current state of the form.
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
-
-  }
-
-  /**
-   * Used to validate that the declared amount is set if not disabled.
-   *
-   * @param array $element
-   *   The element to validate.
-   * @param \Drupal\Core\Form\FormStateInterface $form_state
-   *   The form state object.
-   * @param array $form
-   *   The form array.
-   */
-  public function validateAmount(array $element, FormStateInterface $form_state, array &$form) {
-    if (!is_numeric($element['#value']) && empty($element['#disabled'])) {
-      $form_state->setError($element, $this->t('Amount must be a number.'));
-    }
-  }
-
-  /**
-   * Validation handler for the End of Day report "save" button.
-   *
-   * @param array $form
-   *   The form array.
-   * @param \Drupal\Core\Form\FormStateInterface $form_state
-   *   The form state object.
-   */
-  public function endOfDaySaveValidate(array &$form, FormStateInterface $form_state) {
-
-  }
-
-  /**
-   * Validation handler for the update report "save" button.
-   *
-   * @param array $form
-   *   The form array.
-   * @param \Drupal\Core\Form\FormStateInterface $form_state
-   *   The form state object.
-   */
-  public function updateValidate(array &$form, FormStateInterface $form_state) {
-
-  }
-
-  /**
-   * Submit handler for the End of Day report "save" button.
-   *
-   * @param array $form
-   *   The form array.
-   * @param \Drupal\Core\Form\FormStateInterface $form_state
-   *   The form state object.
-   *
-   * @throws \Drupal\Core\Entity\EntityStorageException
-   */
-  public function endOfDaySaveSubmit(array &$form, FormStateInterface $form_state) {
-    $date = $form_state->getValue('date');
-
-    // POS register.
-    $register_id = $form_state->getValue('register_id');
-    $register = Register::load($register_id);
-    /** @var \Drupal\commerce_store\Entity\Store $store */
-    $store = Store::load($register->getStoreId());
-
-    // Serialize form data.
-    $default_currency = $store->getDefaultCurrencyCode();
-    $data = $form_state->getValue($default_currency)['rows'];
-
-    // If we're making a new entry, that means we're closing our active
-    // register.
-    if ($register->isOpen()) {
-      $register->close();
-      $register->save();
-      drupal_set_message($this->t('Register @register has been closed.', [
-        '@register' => $register->label(),
-      ]));
-    }
-
-    /** @var \Drupal\commerce_pos_reports\ReportGenerator $report_generator */
-    $report_generator = \Drupal::service('commerce_pos_reports.report_generator');
-    $report_generator->saveReport($register, $date, $data);
-
-  }
-
-  /**
-   * Submit handler for the update report "save" button.
-   *
-   * @param array $form
-   *   The form array.
-   * @param \Drupal\Core\Form\FormStateInterface $form_state
-   *   The form state object.
-   *
-   * @throws \Exception
-   */
-  public function updateSubmit(array &$form, FormStateInterface $form_state) {
-    $date = $form_state->getValue('date');
-
-    // POS register.
-    $register_id = $form_state->getValue('register_id');
-    $register = Register::load($register_id);
-    /** @var \Drupal\commerce_store\Entity\Store $store */
-    $store = Store::load($register->getStoreId());
-
-    // Serialize form data.
-    $default_currency = $store->getDefaultCurrencyCode();
-    $data = $form_state->getValue($default_currency)['rows'];
-
-    /** @var \Drupal\commerce_pos_reports\ReportGenerator $report_generator */
-    $report_generator = \Drupal::service('commerce_pos_reports.report_generator');
-    $report_generator->saveReport($register, $date, $data);
+    // TODO: Implement submitForm() method.
   }
 
   /**
@@ -498,8 +400,15 @@ class EndOfDayForm extends FormBase {
    * @return mixed
    *   Return the form with updated results.
    */
-  public function endOfDayAjaxRefresh(array &$form, FormStateInterface $form_state) {
+  public function previousReportsAjaxRefresh(array &$form, FormStateInterface $form_state) {
     return $form['results'];
+  }
+
+  /**
+   *
+   */
+  public function formAjaxRefresh(array &$form, FormStateInterface $form_state) {
+    return $form;
   }
 
 }

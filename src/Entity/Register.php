@@ -2,6 +2,8 @@
 
 namespace Drupal\commerce_pos\Entity;
 
+use Drupal\commerce_pos\Event\RegisterEvents;
+use Drupal\commerce_pos\Event\RegisterOpenEvent;
 use Drupal\commerce_price\Price;
 use Drupal\Core\Entity\ContentEntityBase;
 use Drupal\Core\Entity\EntityTypeInterface;
@@ -132,6 +134,8 @@ class Register extends ContentEntityBase implements RegisterInterface {
    * {@inheritdoc}
    */
   public function open() {
+    $event = new RegisterOpenEvent($this);
+    \Drupal::service('event_dispatcher')->dispatch(RegisterEvents::REGISTER_OPEN, $event);
     $this->set('open', TRUE);
     return $this;
   }
