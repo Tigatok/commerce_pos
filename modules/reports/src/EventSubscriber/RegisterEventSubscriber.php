@@ -38,7 +38,10 @@ class RegisterEventSubscriber implements EventSubscriberInterface {
    * The event that fires on Register Open.
    */
   public function onRegisterOpen(RegisterOpenEvent $registerOpenEvent) {
+    /** @var \Drupal\commerce_pos_reports\ReportGenerator $reportGenerator */
     $reportGenerator = \Drupal::service('commerce_pos_reports.report_generator');
+    $date = date('y-m-d', time());
+    $reportGenerator->createReport($date, $registerOpenEvent->getRegister()->id(), NULL, FALSE);
   }
 
 }

@@ -226,21 +226,4 @@ class ReportGeneratorKernelTest extends CommerceKernelTestBase {
     $this->assertTrue(count($report_versions) == 1);
   }
 
-//  public function testGetReportTotals() {
-//    $time = time();
-//    $date = date('Y-m-d', $time);
-//    $serial_data = 'a:4:{s:8:"pos_cash";a:2:{s:8:"declared";s:2:"10";s:12:"cash_deposit";s:1:"0";}s:10:"pos_credit";a:1:{s:8:"declared";s:1:"0";}s:9:"pos_debit";a:1:{s:8:"declared";s:1:"0";}s:13:"pos_gift_card";a:1:{s:8:"declared";s:1:"0";}}';
-//    $this->reportGenerator->createReport($date, $this->register->id(), $serial_data, TRUE, $time);
-//    $expected = [
-//      'USD' => [
-//        'pos_cash' => 10,
-//        'pos_credit' => 0,
-//        'pos_debit' => 0,
-//        'pos_gift_card' => 0,
-//      ],
-//    ];
-//
-//    $this->assertSame($expected, $this->reportGenerator->getReportTotals(strtotime(date('Y-m-d h:i:s', $time)), $this->register->id()));
-//  }
-
 }

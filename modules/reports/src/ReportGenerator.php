@@ -54,9 +54,9 @@ class ReportGenerator {
     $reports = [];
 
     foreach ($results as $result) {
-      if ($result->version_timestamp != 0) {
-        $timestamp = date('h:i:s A', $result->version_timestamp);
-        $reports[$result->version_timestamp] = $timestamp;
+      if ($result->closed_timestamp != 0) {
+        $timestamp = date('h:i:s A', $result->open_timestamp) . ' - ' . date('h:i:s A', $result->closed_timestamp);
+        $reports[$result->closed_timestamp] = $timestamp;
       }
     }
     if (empty($reports)) {
@@ -69,7 +69,7 @@ class ReportGenerator {
   /**
    * Returns a specific report by version.
    *
-   * @param $version_timestamp
+   * @param $closed_timestamp
    *   The version of the report to get.
    * @param $register_id
    *   The register id for report to generate.
@@ -77,12 +77,12 @@ class ReportGenerator {
    * @return mixed
    *   The results.
    */
-  public function getReportsByVersionTimestamp($version_timestamp, $register_id) {
+  public function getReportsByVersionTimestamp($closed_timestamp, $register_id) {
     $query = $this->connection;
     $query = $query->select('commerce_pos_report_declared_data', 't')
       ->fields('t')
       ->condition('register_id', $register_id, '=')
-      ->condition('version_timestamp', $version_timestamp, '=');
+      ->condition('closed_timestamp', $closed_timestamp, '=');
     $report = $query->execute()->fetchAssoc();
 
     if (!empty($report)) {
@@ -195,10 +195,10 @@ class ReportGenerator {
       $latest_report_state = $latest_report['state'];
     }
     if ($exists && ($latest_report_state == NULL || $latest_report_state == 0)) {
-      $this->updateReport($date, $register_id, $serial_data, $version_timestamp, $state);
+      $this->updateReport($date, $register_id, $serial_data, $state);
     }
     else {
-      $this->createReport($date, $register_id, $serial_data, $state, $version_timestamp);
+      $this->createReport($date, $register_id, $serial_data, $state);
     }
 
     $this->messenger->addMessage(t('Successfully saved the declared values for register @register.', [
@@ -215,31 +215,33 @@ class ReportGenerator {
    *   The register id of the report.
    * @param $serial_data
    *   The data to update.
-   * @param $state
+   * @param bool $state
    *   The state of the report. 0 if open, 1 if closed.
    *   You need elevated permissions to update a closed report.
    *   Once a report is closed, it cannot be opened again.
-   * @param $version_timestamp
-   *   The version of the timestamp to update.
+   * @param null $open_timestamp
+   * @param null $closed_timestamp
+   *
+   * @return bool
    */
-  public function updateReport($date, $register_id, $serial_data, $version_timestamp = NULL, $state = FALSE) {
+  public function updateReport($date, $register_id, $serial_data, $state = FALSE, $open_timestamp = NULL, $closed_timestamp = NULL) {
     $query = $this->connection;
+    // If State, then we are setting an open report to closed, or updating a closed report.
     if ($state) {
       $query = $query->update('commerce_pos_report_declared_data')
         ->condition('register_id', $register_id, '=')
-        ->condition('date', strtotime($date), '=')
-        ->condition('version_timestamp', 0, '=')
+        ->condition('open_timestamp', $open_timestamp, '=')
         ->fields([
           'data' => $serial_data,
           'state' => (int) $state,
-          'version_timestamp' => $version_timestamp,
+          'closed_timestamp' => $closed_timestamp,
         ]);
     }
+    // If the report is open, we are just updating a report.
     else {
       $query = $query->update('commerce_pos_report_declared_data')
         ->condition('register_id', $register_id, '=')
-        ->condition('date', strtotime($date), '=')
-        ->condition('version_timestamp', 0, '=')
+        ->condition('state', $open_timestamp, '=')
         ->fields([
           'data' => $serial_data,
         ]);
@@ -255,7 +257,7 @@ class ReportGenerator {
   }
 
   /**
-   * Generates a new report with a versioned timestamp.
+   * Generates a new report.
    *
    * @param $date
    *   The day of the report.
@@ -263,21 +265,32 @@ class ReportGenerator {
    *   The register the report is targeting.
    * @param $serial_data
    *   The serialized data for the report.
-   * @param $state
+   * @param bool $state
    *   The state of the report, 0 if open, 1 if closed.
+   * @param null $open_timestamp
+   *   The open timestamp of the report.
+   * @param null $closed_timestamp
+   *   The closed timestmap of the report.
+   *
+   * @return bool
    */
-  public function createReport($date, $register_id, $serial_data, $state = TRUE, $version_timestamp = NULL) {
+  public function createReport($date, $register_id, $serial_data = NULL, $state = TRUE, $open_timestamp = NULL, $closed_timestamp = NULL) {
     $query = $this->connection;
-    if ($version_timestamp == NULL) {
-      $version_timestamp = strtotime(date('h:i:s', time()));
+    if ($open_timestamp == NULL) {
+      $open_timestamp = strtotime(date('h:i:s', time()));
     }
+    // If close and save was selected.
     if ($state == TRUE) {
+      if ($closed_timestamp == NULL) {
+        $closed_timestamp = strtotime(date('h:i:s', time()));
+      }
       $query = $query->insert('commerce_pos_report_declared_data')
         ->fields([
           'register_id' => $register_id,
           'date' => strtotime($date),
           'data' => $serial_data,
-          'version_timestamp' => $version_timestamp,
+          'open_timestamp' => $open_timestamp,
+          'closed_timestamp' => $closed_timestamp,
           'state' => (int) $state,
         ]);
     }
@@ -287,6 +300,8 @@ class ReportGenerator {
           'register_id' => $register_id,
           'date' => strtotime($date),
           'data' => $serial_data,
+          'open_timestamp' => $open_timestamp,
+          'closed_timestamp' => $closed_timestamp,
           'state' => (int) $state,
         ]);
     }

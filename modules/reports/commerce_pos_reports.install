@@ -36,6 +36,16 @@ function commerce_pos_reports_schema() {
         'not null' => TRUE,
         'default' => 0,
       ],
+      'open_timestamp' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'closed_timestamp' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'default' => 0,
+      ],
       'data' => [
         'type' => 'blob',
         'not null' => FALSE,
@@ -46,11 +56,6 @@ function commerce_pos_reports_schema() {
         'type' => 'int',
         'not null' => FALSE,
         'size' => 'tiny',
-        'default' => 0,
-      ],
-      'version_timestamp' => [
-        'type' => 'int',
-        'not null' => TRUE,
         'default' => 0,
       ],
     ],
@@ -83,7 +88,7 @@ function commerce_pos_reports_update_8001() {
 }
 
 /**
- * Adds a version_timestamp field for more accurate report versions.
+ * Convert values to open and close date.
  */
 function commerce_pos_reports_update_8002() {
   $spec = [
@@ -93,5 +98,14 @@ function commerce_pos_reports_update_8002() {
   ];
 
   $schema = Database::getConnection()->schema();
-  $schema->addField('commerce_pos_report_declared_data', 'version_timestamp', $spec);
+  $schema->addField('commerce_pos_report_declared_data', 'open_timestamp', $spec);
+
+  $spec = [
+    'type' => 'int',
+    'not null' => TRUE,
+    'default' => 0,
+  ];
+
+  $schema = Database::getConnection()->schema();
+  $schema->addField('commerce_pos_report_declared_data', 'closed_timestamp', $spec);
 }

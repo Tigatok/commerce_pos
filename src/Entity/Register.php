@@ -131,7 +131,13 @@ class Register extends ContentEntityBase implements RegisterInterface {
   }
 
   /**
-   * {@inheritdoc}
+   * Set the register to open.
+   *
+   * Fires an event.
+   *
+   * @see RegisterOpenEvent
+   *
+   * @return $this
    */
   public function open() {
     $event = new RegisterOpenEvent($this);
