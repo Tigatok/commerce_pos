@@ -1,0 +1,10 @@
+services:
+  commerce_pos_reports.report_generator:
+    class: Drupal\commerce_pos_reports\ReportGenerator
+    arguments: ['@database', '@messenger']
+
+
+  commerce_pos_reports.register_event_subscriber:
+    class: Drupal\commerce_pos_reports\EventSubscriber\RegisterEventSubscriber
+    tags:
+      - { name: event_subscriber }

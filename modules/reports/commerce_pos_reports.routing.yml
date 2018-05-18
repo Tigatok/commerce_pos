@@ -13,3 +13,11 @@ commerce_pos_reports.end-of-day:
     _title: 'Reports - End of Day'
   requirements:
     _permission: 'access commerce pos reports'
+
+commerce_pos_reports.previous-reports:
+  path: '/admin/commerce/pos/reports/previous-reports'
+  defaults:
+    _form: '\Drupal\commerce_pos_reports\Form\PreviousReportsForm'
+    _title: 'Previous End of Day Reports'
+  requirements:
+    _permission: 'access commerce pos reports'
